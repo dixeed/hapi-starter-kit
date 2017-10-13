@@ -1,0 +1,10 @@
+{
+  "extends": "@dixeed/eslint-config",
+  "globals": {
+    "it": false,
+    "describe": false
+  },
+  "env": {
+    "mocha": true
+  }
+}
