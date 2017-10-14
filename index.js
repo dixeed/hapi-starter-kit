@@ -4,6 +4,7 @@ const Hapi = require('hapi');
 const Sequelize = require('sequelize');
 const HSequelize = require('hapi-sequelize');
 const Good = require('good');
+const Hoek = require('hoek');
 
 const chalk = require('chalk');
 const { Line } = require('clui');
@@ -17,51 +18,63 @@ const fixturesSpinner = ora('Loading fixtures');
 const serverSpinner = ora('Starting server');
 
 /**
- * Returns an object containing a Hapi server and the startServer() method.
- * @param {Object} config - Configuration object for the Hapi server
- * @param {string} config.server.host - Hapi server host
- * @param {integer} config.server.port - Hapi server port
- * @param {string} config.database.name - Database instance name
- * @param {string} config.database.credentials.dbName - Database name (connection)
- * @param {string} config.database.credentials.user - Database user
- * @param {string} config.database.credentials.pass - Database password
- * @param {string} config.database.credentials.dialect - Database type (mysql, posqtgres, ...)
- * @param {string} config.database.credentials.host - Database connection host
- * @param {integer} config.database.credentials.port - Database connection port
- * @param {boolean} config.database.syncForce - Whether to reload the database each time the server restarts.
- * @param {Object} config.good - Config object for the Good plugin (logs)
- * 
- * @param {Array} plugins - An array of plugins to register in the Hapi server.
- * @param {function} loadFixtures - An async function that loads the fixtures (must return a Promise object).
+ * Constructor for the StarterKit object.
  */
-module.exports = (config, plugins, loadFixtures) => {
-  const server = new Hapi.Server();
-
-  // Server configuration
-  server.connection({
-    host: config.server.host,
-    port: config.server.port,
-    routes: {
-      cors: { additionalExposedHeaders: ['Content-Disposition'] },
-      files: {
-        relativeTo: __dirname,
-      },
-    },
-  });
-
-  const main = {
-    server,
-    startServer,
-  };
-
-  // So that next call to this module can ommit the config parameter.
-  module.exports = main;
-  return main;
+module.exports = function StarterKit() {
+  this.config = null;
+  this.server = null;
+  this.initialized = false;
 
   /**
-   * Inits and starts the server.
+   * Initializes the Hapi server with the config parameter.
+   * @param {Object} config - Configuration object for the Hapi server
+   * @param {string} config.server.host - Hapi server host
+   * @param {integer} config.server.port - Hapi server port
+   * @param {string} config.database.name - Database instance name
+   * @param {string} config.database.credentials.dbName - Database name (connection)
+   * @param {string} config.database.credentials.user - Database user
+   * @param {string} config.database.credentials.pass - Database password
+   * @param {string} config.database.credentials.dialect - Database type (mysql, posqtgres, ...)
+   * @param {string} config.database.credentials.host - Database connection host
+   * @param {integer} config.database.credentials.port - Database connection port
+   * @param {boolean} config.database.syncForce - Whether to reload the database each time the server restarts.
+   * @param {Object} config.good - Config object for the Good plugin (logs)
    */
-  function startServer() {
+  this.init = config => {
+    if (!config) {
+      throw new Error(`The config parameter is mandatory.`);
+    }
+
+    Hoek.assert(this.initialized === false, 'You should call init() only once.');
+    const server = new Hapi.Server();
+
+    // Server configuration
+    server.connection({
+      host: config.server.host,
+      port: config.server.port,
+      routes: {
+        cors: { additionalExposedHeaders: ['Content-Disposition'] },
+        files: {
+          relativeTo: __dirname,
+        },
+      },
+    });
+
+    this.config = config;
+    this.server = server;
+    this.initialized = true;
+
+    return server;
+  };
+
+  /**
+   * Registers the provided plugins and starts the Hapi server.
+   * @param {Array} [plugins] - An array of plugins to register in the Hapi server. Default [].
+   * @param {function} [loadFixtures] - An async function that loads the fixtures (must return a Promise object). Default null.
+   */
+  this.start = (plugins = [], loadFixtures = null) => {
+    Hoek.assert(this.initialized === true, 'init() must be called before start().');
+
     blankLine.output();
     pluginsSpinner.start();
 
@@ -70,15 +83,15 @@ module.exports = (config, plugins, loadFixtures) => {
       {
         register: HSequelize,
         options: {
-          name: config.database.name,
+          name: this.config.database.name,
           sequelize: new Sequelize(
-            config.database.credentials.dbName,
-            config.database.credentials.user,
-            config.database.credentials.pass,
+            this.config.database.credentials.dbName,
+            this.config.database.credentials.user,
+            this.config.database.credentials.pass,
             {
-              dialect: config.database.credentials.dialect,
-              host: config.database.credentials.host,
-              port: config.database.credentials.port,
+              dialect: this.config.database.credentials.dialect,
+              host: this.config.database.credentials.host,
+              port: this.config.database.credentials.port,
             }
           ),
           models: ['lib/**/model.js', 'lib/**/models/*.js'],
@@ -87,11 +100,11 @@ module.exports = (config, plugins, loadFixtures) => {
       // Logger config
       {
         register: Good,
-        options: config.good,
+        options: this.config.good,
       },
     ].concat(plugins);
 
-    return server
+    return this.server
       .register(mergedPlugins)
       .catch(err => {
         pluginsSpinner.fail(`Loading plugins: ${err.stack}`);
@@ -105,10 +118,10 @@ module.exports = (config, plugins, loadFixtures) => {
         blankLine.output();
         modelsSpinner.start();
 
-        const db = server.plugins['hapi-sequelize'][config.database.name];
+        const db = this.server.plugins['hapi-sequelize'][this.config.database.name];
 
         // Reload the database when the server is restarted (only in dev mode).
-        return db.sequelize.sync({ force: config.database.syncForce });
+        return db.sequelize.sync({ force: this.config.database.syncForce });
       })
       .catch(err => {
         modelsSpinner.fail(`Models synchronization: ${err.stack}`);
@@ -123,7 +136,7 @@ module.exports = (config, plugins, loadFixtures) => {
         blankLine.output();
         fixturesSpinner.start();
 
-        if (config.database.syncForce === true) {
+        if (this.config.database.syncForce === true && loadFixtures !== null) {
           return loadFixtures();
         }
 
@@ -134,7 +147,7 @@ module.exports = (config, plugins, loadFixtures) => {
         process.exit(3); // eslint-disable-line no-process-exit
       })
       .then(() => {
-        if (config.database.syncForce === true) {
+        if (this.config.database.syncForce === true) {
           fixturesSpinner.succeed();
         } else {
           fixturesSpinner.warn();
@@ -143,11 +156,11 @@ module.exports = (config, plugins, loadFixtures) => {
         blankLine.output();
         serverSpinner.start();
 
-        return server.start();
+        return this.server.start();
       })
       .then(() => {
         serverSpinner.succeed(
-          chalk`Server started on port : [{yellowBright ${config.server.port}}]`
+          chalk`Server started on port : [{yellowBright ${this.config.server.port}}]`
         );
         blankLine.output();
       })
@@ -157,5 +170,5 @@ module.exports = (config, plugins, loadFixtures) => {
 
         process.exit(5); // eslint-disable-line no-process-exit
       });
-  }
+  };
 };
