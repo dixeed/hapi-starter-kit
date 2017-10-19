@@ -37,6 +37,10 @@ starterKit.init({
   database: {
     name: 'mainDb'              // Database instance name within Hapi. /!\ Different from the actual database name
     syncForce: true,            // Whether to reload the models each time the server restarts.
+    modelPaths: [               // An array of path from where to load the Sequelize Models.
+      'lib/**/model.js',        // Default to ['lib/**/model.js', 'lib/**/models/*.js']
+      'lib/**/models/*.js'
+    ],
     credentials: {
       dbName: 'myproject_db'    // Database name
       user: 'root',             // User that will access the database
@@ -58,8 +62,25 @@ starterKit.start([
 ], loadFixtures).then(() => {
   // Do your thing !
 });
+
+// As init() returns an instance of itself, we can chain the calls:
+starterKit.init(config)
+  .start(plugins, loadFixtures)
+  .then(() => {
+    // ...
+  });
 ```
 **For the Database config, please report to the Sequelize 3 documentation as this package is using Sequelize as well as Hapi-Sequelize.**
+
+## The StarterKit object
+### Properties
+- starterKit.config: The loaded configuration.
+- starterKit.server: The Hapi server instanciated by the call to `init()`.
+- starterKit.sequelize: The Sequelize instance instanciated by the call to `init()`.
+- starterKit.initialized: A boolean specifying whether the object was initialized (i.e `init()` was called).
+### Methods
+- init(config): returns an instance of the starterKit.
+- start(plugins, loadFixtures): returns a Promise resolved after the plugins registration, the model loading and optionaly the fixtures loading.
 
 ## Documentation for .start()
 The start function is used to:
