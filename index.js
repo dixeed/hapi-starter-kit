@@ -23,7 +23,15 @@ const serverSpinner = ora('Starting server');
 module.exports = function StarterKit() {
   this.config = null;
   this.server = null;
+  this.sequelize = null;
   this.initialized = false;
+
+  // Default config for the init() method.
+  const defaultConfigs = {
+    database: {
+      modelPaths: ['lib/**/model.js', 'lib/**/models/*.js'],
+    },
+  };
 
   /**
    * Initializes the Hapi server with the config parameter.
@@ -38,7 +46,11 @@ module.exports = function StarterKit() {
    * @param {string} config.database.credentials.host - Database connection host
    * @param {integer} config.database.credentials.port - Database connection port
    * @param {boolean} config.database.syncForce - Whether to reload the database each time the server restarts.
+   * @param {Array<string>} [config.database.modelPaths] - An array of path from where to load your Sequelize Models.
+   *                                                       Default to ['lib/../model.js', 'lib/../models/*.js']
    * @param {Object} config.good - Config object for the Good plugin (logs)
+   * 
+   * @return {StarterKit} The current object in order to make chain calls.
    */
   this.init = config => {
     if (!config) {
@@ -47,6 +59,7 @@ module.exports = function StarterKit() {
 
     Hoek.assert(this.initialized === false, 'You should call init() only once.');
     const server = new Hapi.Server();
+    const mergedConfig = Object.assign(defaultConfigs, config);
 
     // Server configuration
     server.connection({
@@ -60,17 +73,31 @@ module.exports = function StarterKit() {
       },
     });
 
-    this.config = config;
+    // Init the database configurations.
+    this.sequelize = new Sequelize(
+      mergedConfig.database.credentials.dbName,
+      mergedConfig.database.credentials.user,
+      mergedConfig.database.credentials.pass,
+      {
+        dialect: mergedConfig.database.credentials.dialect,
+        host: mergedConfig.database.credentials.host,
+        port: mergedConfig.database.credentials.port,
+      }
+    );
+
+    this.config = mergedConfig;
     this.server = server;
     this.initialized = true;
 
-    return server;
+    return this;
   };
 
   /**
    * Registers the provided plugins and starts the Hapi server.
    * @param {Array} [plugins] - An array of plugins to register in the Hapi server. Default [].
    * @param {function} [loadFixtures] - An async function that loads the fixtures (must return a Promise object). Default null.
+   * 
+   * @return {Promise} A promise chain resulting from the loading of the plugins, the models and the start of the server.
    */
   this.start = (plugins = [], loadFixtures = null) => {
     Hoek.assert(this.initialized === true, 'init() must be called before start().');
@@ -84,17 +111,8 @@ module.exports = function StarterKit() {
         register: HSequelize,
         options: {
           name: this.config.database.name,
-          sequelize: new Sequelize(
-            this.config.database.credentials.dbName,
-            this.config.database.credentials.user,
-            this.config.database.credentials.pass,
-            {
-              dialect: this.config.database.credentials.dialect,
-              host: this.config.database.credentials.host,
-              port: this.config.database.credentials.port,
-            }
-          ),
-          models: ['lib/**/model.js', 'lib/**/models/*.js'],
+          sequelize: this.sequelize,
+          models: this.config.database.modelPaths,
         },
       },
       // Logger config
