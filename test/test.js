@@ -64,10 +64,16 @@ describe('hapi-starter-kit', () => {
       expect(() => starterKit.init(config)).to.throw('You should call init() only once.');
     });
 
-    it('should set the config and server objects', () => {
+    it('should set the config, server and sequelize objects', () => {
+      const resultingConfig = Object.assign({}, config);
+
+      // Default config if not provided.
+      resultingConfig.database.modelPaths = ['lib/**/model.js', 'lib/**/models/*.js'];
+
       starterKit.init(config);
-      expect(starterKit.config).to.equal(config);
+      expect(starterKit.config).to.deep.equal(resultingConfig);
       expect(starterKit.server).to.be.an('object');
+      expect(starterKit.sequelize).to.be.an('object');
     });
   });
 
